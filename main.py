@@ -31,7 +31,6 @@ from sklearn.metrics import balanced_accuracy_score, make_scorer, roc_auc_score,
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from imblearn.under_sampling import RandomUnderSampler
 
-
 # MICE, KNN, Dumb
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
@@ -120,11 +119,13 @@ algorithms = {
 
 # Definição de imputers para testar diferentes abordagens
 imputers = {
-    "Mean": SimpleImputer(strategy="mean"),
-    "KNN": KNNImputer(n_neighbors=3, weights='distance'),
-    "MICE": IterativeImputer(max_iter=100),
+    #"Mean": SimpleImputer(strategy="mean"),
+    #"KNN": KNNImputer(n_neighbors=5, weights='distance'),
+    #"MICE": IterativeImputer(max_iter=100),
+    "SAEI": None,
     #"PMIVAE": None,  # Será tratado separadamente, pois é um modelo treinado
-    "LPMD2": None  # Será tratado separadamente, pois é um modelo treinado
+    #"LPMD": None,
+    #"LPMD2": None  # Será tratado separadamente, pois é um modelo treinado
 }
 
 #3 folds to choose the best hyperparameters
@@ -163,80 +164,222 @@ for name, (X, y) in data.items():
                 
                 X_train, X_test = X.iloc[train], X.iloc[test]
                 y_train, y_test = y.iloc[train], y.iloc[test]
+
+                # Modelo normalização
+                scaler = MinMaxScaler(feature_range=(0, 1))
+                model_norm = scaler.fit(X_train)
+
+                # Normaliza X_train                
+                X_train_norm = model_norm.transform(X_train)
+                X_train = pd.DataFrame(X_train_norm, columns=X_train.columns)
+
+                # Normaliza X_Test
+                X_test_norm = model_norm.transform(X_test)
+                X_test = pd.DataFrame(X_test_norm, columns=X_test.columns)
                 
                 y_ = pd.DataFrame.from_dict(y)
+               
                 if (((y_[y_.TARGET == 1].shape[0]) * 1.5) < (y_[y_.TARGET == 0].shape[0])):
                     
                     y_pred, y_true = [], []
                     
                     X_train, y_train = under.fit_resample(X_train, y_train)
+
+                    #print("Tamanho X_train: ", X_train.shape)
+
+                    #print("Total de NaNs em X_train:", np.isnan(X_train.iloc[:, :].values).sum())
+
+                    #print("Tamanho X_test: ", X_test.shape)
+                    
+                    #print("Total de NaNs em X_test:", np.isnan(X_test.iloc[:, :].values).sum())
                     
                     # Aplicação do imputer atual
                     if imputer_name == "PMIVAE":
-                        # Treinar e imputar com PMIVAE
-                        pmivae_model = MyPipeline.model_autoencoder_pmivae(X_train.loc[:, :].values)  # Treina o modelo
-                        X_train = pmivae_model.transform(X_train.iloc[:, :].values)  # Imputa os dados de treino
-                        X_test = pmivae_model.transform(X_test.iloc[:, :].values)  # Imputa os dados de teste
+            
+                        # Copia os valores originais e cria máscara
+                        df_copy_X_train = X_train.copy(deep=True)
+                        mask_train = df_copy_X_train.isna()
+                        df_copy_X_test = X_test.copy(deep=True)
+                        mask_test = df_copy_X_test.isna()
 
+                        # Treinar e imputar com PMIVAE
+                        pmivae_model = MyPipeline.model_autoencoder_pmivae(X_train.iloc[:, :].values)
+                        imputed_X_train = pmivae_model.transform(X_train.iloc[:, :].values)  
+                        imputed_X_test = pmivae_model.transform(X_test.iloc[:,:].values)  
+
+                        #print("Total de NaNs antes da restauração em imputed_X_train:", np.isnan(imputed_X_train).sum())
+                        #print("Total de NaNs antes da restauração em imputed_X_test:", np.isnan(imputed_X_test).sum())
+
+                        # Transforma em DataFrame para facilitar a manipulação
+                        imputed_X_train = pd.DataFrame(imputed_X_train, columns=df_copy_X_train.columns, index=df_copy_X_train.index)
+                        imputed_X_test = pd.DataFrame(imputed_X_test, columns=df_copy_X_test.columns, index=df_copy_X_test.index)
+
+                        # Restaura os valores originais, mantendo apenas os imputados
+                        imputed_X_train = df_copy_X_train.where(~mask_train, imputed_X_train)
+                        imputed_X_test = df_copy_X_test.where(~mask_test, imputed_X_test)
+
+                        # Transforma novamente em array para manter compatibilidade
+                        imputed_X_train = imputed_X_train.to_numpy()
+                        imputed_X_test = imputed_X_test.to_numpy()
+
+                        #print("Total de NaNs após restauração em imputed_X_train:", np.isnan(imputed_X_train).sum())
+                        #print("Total de NaNs após restauração em imputed_X_test:", np.isnan(imputed_X_test).sum())
+
+
+                    elif imputer_name == "SAEI":
+
+                        # Copia os valores originais e cria máscara
+                        df_copy_X_train = X_train.copy(deep=True)
+                        mask_train = df_copy_X_train.isna()
+                        df_copy_X_test = X_test.copy(deep=True)
+                        mask_test = df_copy_X_test.isna()
+
+                        # SAEI
+                        features = X_train.columns[X_train.isna().any()].tolist()
+                        model = MyPipeline.model_saei(  dataset_train_md = X_train,
+                                                        dataset_test_md = X_test,
+                                                        col_name =  features,
+                                                        input_shape = X.shape[1])
+                        
+                        # Imputação dos missing values nos conjuntos de treino e teste
+                        imputed_X_train = model.transform(X_train.iloc[:, :].values)  
+                        imputed_X_test = model.transform(X_test.iloc[:,:].values) 
+                        
+                        #print("Total de NaNs antes da restauração em imputed_X_train:", np.isnan(imputed_X_train).sum())
+                        #print("Total de NaNs antes da restauração em imputed_X_test:", np.isnan(imputed_X_test).sum())
+
+                        # Transforma em DataFrame para facilitar a manipulação
+                        imputed_X_train = pd.DataFrame(imputed_X_train, columns=df_copy_X_train.columns, index=df_copy_X_train.index)
+                        imputed_X_test = pd.DataFrame(imputed_X_test, columns=df_copy_X_test.columns, index=df_copy_X_test.index)
+
+                        # Restaura os valores originais, mantendo apenas os imputados
+                        imputed_X_train = df_copy_X_train.where(~mask_train, imputed_X_train)
+                        imputed_X_test = df_copy_X_test.where(~mask_test, imputed_X_test)
+
+                        # Transforma novamente em array para manter compatibilidade
+                        imputed_X_train = imputed_X_train.to_numpy()
+                        imputed_X_test = imputed_X_test.to_numpy()
+
+                        #print("Total de NaNs após restauração em imputed_X_train:", np.isnan(imputed_X_train).sum())
+                        #print("Total de NaNs após restauração em imputed_X_test:", np.isnan(imputed_X_test).sum())
                     
                     elif imputer_name == "LPMD2":
-                        # Treinar e imputar com PMIVAE
-                        print("X_train: ", X_train.shape)
-                        print(X_train)
-                        print("X_test: ", y_train.shape)
-                        print(y_train)
+                        # Treinar e imputar
                         lpmd2_model = MyPipeline.model_lpmd2(X_train, y_train)  # Treina o modelo
-                        X_train = lpmd2_model.transform(X_train, is_Train=True)  # Imputa os dados de treino
-                        X_test = lpmd2_model.transform(X_test)  # Imputa os dados de teste
+                        imputed_X_train = lpmd2_model.transform(X_train, is_Train=True)  # Imputa os dados de treino
+                        imputed_X_test = lpmd2_model.transform(X_test)  # Imputa os dados de teste
+
+                    elif imputer_name == "LPMD":
+                        # Treinar e imputar
+                        lpmd_model = MyPipeline.model_lpmd(X_train, y_train)  # Treina o modelo
+                        imputed_X_train = lpmd_model.transform(X_train)  # Imputa os dados de treino
+                        imputed_X_test = lpmd_model.transform(X_test)  # Imputa os dados de teste
                     
                     else:
                         imputer.fit(X_train)
-                        X_train = imputer.transform(X_train)
-                        X_test = imputer.transform(X_test)
+                        imputed_X_train = imputer.transform(X_train)
+                        imputed_X_test = imputer.transform(X_test)
 
 
-                    prep.fit(X_train)
-                    
-                    best.fit(prep.transform(X_train), y_train)
-                    
-                    y_pred.extend(best.predict(prep.transform(X_test)))
-                    y_true.extend(y_test) 
-
-                    score[algorithm].append(recall_score(y_true, y_pred, labels=[0,1], average=None))
-                    aucscore = roc_auc_score(y_test, (best.predict_proba(prep.transform(X_test)))[:, 1])
-                    auc_score[algorithm].append(aucscore)
 
                 else:
                     y_pred, y_true = [], []
                     
                     # Aplicação do imputer atual
                     if imputer_name == "PMIVAE":
+
+                        # Copia os valores originais e cria máscara
+                        df_copy_X_train = X_train.copy(deep=True)
+                        mask_train = df_copy_X_train.isna()
+                        df_copy_X_test = X_test.copy(deep=True)
+                        mask_test = df_copy_X_test.isna()
+
                         # Treinar e imputar com PMIVAE
-                        pmivae_model = MyPipeline.model_autoencoder_pmivae(X_train.loc[:, :].values)  # Treina o modelo
-                        X_train = pmivae_model.transform(X_train.iloc[:, :].values)  # Imputa os dados de treino
-                        X_test = pmivae_model.transform(X_test.iloc[:, :].values)  # Imputa os dados de teste
+                        pmivae_model = MyPipeline.model_autoencoder_pmivae(X_train.iloc[:, :].values)
+                        imputed_X_train = pmivae_model.transform(X_train.iloc[:, :].values)  
+                        imputed_X_test = pmivae_model.transform(X_test.iloc[:,:].values)  
+
+                        #print("Total de NaNs antes da restauração em imputed_X_train:", np.isnan(imputed_X_train).sum())
+                        #print("Total de NaNs antes da restauração em imputed_X_test:", np.isnan(imputed_X_test).sum())
+
+                        # Transforma em DataFrame para facilitar a manipulação
+                        imputed_X_train = pd.DataFrame(imputed_X_train, columns=df_copy_X_train.columns, index=df_copy_X_train.index)
+                        imputed_X_test = pd.DataFrame(imputed_X_test, columns=df_copy_X_test.columns, index=df_copy_X_test.index)
+
+                        # Restaura os valores originais, mantendo apenas os imputados
+                        imputed_X_train = df_copy_X_train.where(~mask_train, imputed_X_train)
+                        imputed_X_test = df_copy_X_test.where(~mask_test, imputed_X_test)
+
+                        # Transforma novamente em array para manter compatibilidade
+                        imputed_X_train = imputed_X_train.to_numpy()
+                        imputed_X_test = imputed_X_test.to_numpy()
+
+                        #print("Total de NaNs após restauração em imputed_X_train:", np.isnan(imputed_X_train).sum())
+                        #print("Total de NaNs após restauração em imputed_X_test:", np.isnan(imputed_X_test).sum())
+
+                    elif imputer_name == "SAEI":
+
+                        # Copia os valores originais e cria máscara
+                        df_copy_X_train = X_train.copy(deep=True)
+                        mask_train = df_copy_X_train.isna()
+                        df_copy_X_test = X_test.copy(deep=True)
+                        mask_test = df_copy_X_test.isna()
+
+                        # SAEI
+                        features = X_train.columns[X_train.isna().any()].tolist()
+                        model = MyPipeline.model_saei(  dataset_train_md = X_train,
+                                                        dataset_test_md = X_test,
+                                                        col_name =  features,
+                                                        input_shape = X.shape[1])
+                        
+                        # Imputação dos missing values nos conjuntos de treino e teste
+                        imputed_X_train = model.transform(X_train.iloc[:, :].values)  
+                        imputed_X_test = model.transform(X_test.iloc[:,:].values) 
+                        
+                        #print("Total de NaNs antes da restauração em imputed_X_train:", np.isnan(imputed_X_train).sum())
+                        #print("Total de NaNs antes da restauração em imputed_X_test:", np.isnan(imputed_X_test).sum())
+
+                        # Transforma em DataFrame para facilitar a manipulação
+                        imputed_X_train = pd.DataFrame(imputed_X_train, columns=df_copy_X_train.columns, index=df_copy_X_train.index)
+                        imputed_X_test = pd.DataFrame(imputed_X_test, columns=df_copy_X_test.columns, index=df_copy_X_test.index)
+
+                        # Restaura os valores originais, mantendo apenas os imputados
+                        imputed_X_train = df_copy_X_train.where(~mask_train, imputed_X_train)
+                        imputed_X_test = df_copy_X_test.where(~mask_test, imputed_X_test)
+
+                        # Transforma novamente em array para manter compatibilidade
+                        imputed_X_train = imputed_X_train.to_numpy()
+                        imputed_X_test = imputed_X_test.to_numpy()
+
                     
                     elif imputer_name == "LPMD2":
                         # Treinar e imputar com PMIVAE
                         lpmd2_model = MyPipeline.model_lpmd2(X_train, y_train)  # Treina o modelo
-                        X_train = lpmd2_model.transform(X_train)  # Imputa os dados de treino
-                        X_test = lpmd2_model.transform(X_test)  # Imputa os dados de teste
+                        imputed_X_train = lpmd2_model.transform(X_train)  # Imputa os dados de treino
+                        imputed_X_test = lpmd2_model.transform(X_test)  # Imputa os dados de teste
+
+                    elif imputer_name == "LPMD":
+                        # Treinar e imputar com PMIVAE
+                        lpmd_model = MyPipeline.model_lpmd(X_train, y_train)  # Treina o modelo
+                        imputed_X_train = lpmd_model.transform(X_train)  # Imputa os dados de treino
+                        imputed_X_test = lpmd_model.transform(X_test)  # Imputa os dados de teste
                 
                     else:
                         imputer.fit(X_train)
-                        X_train = imputer.transform(X_train)
-                        X_test = imputer.transform(X_test)
+                        imputed_X_train = imputer.transform(X_train)
+                        imputed_X_test = imputer.transform(X_test)
 
-                    prep.fit(X_train)
-                    
-                    best.fit(prep.transform(X_train), y_train)
-                    
-                    y_pred.extend(best.predict(prep.transform(X_test)))
-                    y_true.extend(y_test) 
 
-                    score[algorithm].append(recall_score(y_true, y_pred, labels=[0,1], average=None))
-                    aucscore = roc_auc_score(y_test, (best.predict_proba(prep.transform(X_test)))[:, 1])
-                    auc_score[algorithm].append(aucscore)
+                prep.fit(imputed_X_train)
+                
+                best.fit(prep.transform(imputed_X_train), y_train)
+                
+                y_pred.extend(best.predict(prep.transform(imputed_X_test)))
+                y_true.extend(y_test) 
+
+                score[algorithm].append(recall_score(y_true, y_pred, labels=[0,1], average=None))
+                aucscore = roc_auc_score(y_test, (best.predict_proba(prep.transform(imputed_X_test)))[:, 1])
+                auc_score[algorithm].append(aucscore)
 
         
         elapsed_time = time.time() - start_time  # Calcula o tempo de execução

@@ -189,11 +189,11 @@ class LPMD2():
 
         # entrada de target (somente treino)
         self.train_target = pd.DataFrame(train_target)
-        print(type(self.train_target))
-        print(self.train_target)
+        #print(type(self.train_target))
+        #print(self.train_target)
         # Número de clusters
-        print("Teste UNIQUE")
-        print(self.train_target.iloc[:, 0].unique())
+        #print("Teste UNIQUE")
+        #print(self.train_target.iloc[:, 0].unique())
 
         list_groups = self.train_target.iloc[:, 0].unique()
         self.numero_clusters = len(list_groups)
@@ -398,7 +398,7 @@ class LPMD2():
 
 
 ####################################################################################################
-# Label propagation regression 3 (LPR3) - é uma cópia do 0, porém como inicialização igual a -1.
+# Label propagation regression 3 (LPR3) - é uma cópia do 0, porém como inicialização igual a -1. - LPMD
 ####################################################################################################
 #
 # Label Propagation Regression
@@ -411,20 +411,17 @@ class LPMD2():
 #
 #########################################################
 
-class LabelPropagationRegression3():
+class LPMD():
     ''' Recebe dataframe de dados com o missing
         Retorna dados completos
     '''
     # -------------------------------------------------------------------------------
-    def __init__(self, datacomplete, iteracoes=500, epsilon=1e-32):
+    def __init__(self, iteracoes=500, epsilon=1e-32):
     # Parâmetros
         self.max_iter = iteracoes
         print("max interações: ", self.max_iter )
         self.epsilon = epsilon
         print("epsilon: ", epsilon)
-
-        # entrada dos dados completos para fazer medida de erro
-        self.data = datacomplete
 
     # -------------------------------------------------------------------------------
     def fit(self, datamissing, train_target):       
@@ -436,14 +433,14 @@ class LabelPropagationRegression3():
         self.train_target = pd.DataFrame(train_target)
 
         # Número de clusters
-        list_groups = self.train_target[0].unique()
+        list_groups = self.train_target.iloc[:, 0].unique()
         self.numero_clusters = len(list_groups)
 
         # criando dataset de referencia
         self.dataref = self.dataMiss
 
         # fazendo o agrupamento utilizando o target
-        agrupamento = self.train_target[0]
+        agrupamento = self.train_target.iloc[:, 0]
 
         # adicionando coluna com informação de cluster no dataset original
         self.dataMiss = pd.DataFrame(self.dataMiss)
