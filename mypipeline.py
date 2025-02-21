@@ -15,11 +15,35 @@ from Autoencoders.saei import ConfigSAE, SAEImp, DataSets
 # bibliotecas
 import numpy as np
 import pandas as pd
+from scipy.stats import norm # biblioteca para normalização
+
 
 
 # Ignorar todos os avisos
 import warnings
 warnings.filterwarnings("ignore")
+
+# ==========================================================================
+
+# Função auxiliar
+def pre_imputed_dataset(data):
+    fill_na = {}
+    for col_missing in data[data.isna()]:
+        media = data[col_missing].mean()
+        std = data[col_missing].std()
+        tam_sample = data[col_missing].isna().sum()
+        index_nan = data[col_missing][data[col_missing].isna()].index
+
+        valores_preencher_miss = norm.rvs(loc=media,
+                                        scale=std,
+                                        size=tam_sample)
+        
+        
+        dict_nan = dict(zip(index_nan, valores_preencher_miss))
+        fill_na[col_missing] = dict_nan
+        
+    dataset_pre_imputed = data.fillna(fill_na)
+    return dataset_pre_imputed
 
 
 # ==========================================================================
@@ -45,15 +69,19 @@ class MyPipeline:
         return model
 
 
-    # ------------------------------------------------------------------------
+    # ------------------------------------------------------------------------  
+    
     def model_saei(
         dataset_train_md,
         dataset_test_md,
         col_name,
         input_shape,
     ):
-        
+
         print("[SAEI] Training...")
+
+        x_train_pre = pre_imputed_dataset(dataset_train_md)
+        x_test_pre = pre_imputed_dataset(dataset_test_md)
 
         # initial dumb imputation
         dumb_imputer = SimpleImputer(strategy="mean")
@@ -78,8 +106,10 @@ class MyPipeline:
             x_val=dataset_test,
             x_train_md=dataset_train_md,
             x_val_md=dataset_test_md,
-            x_train_pre=dataset_train_md.fillna(np.mean(dataset_train[col_name])),
-            x_val_pre=dataset_test_md.fillna(np.mean(dataset_test[col_name])),
+            #x_train_pre=dataset_train_md.fillna(np.mean(dataset_train[col_name])),
+            #x_val_pre=dataset_test_md.fillna(np.mean(dataset_test[col_name])),
+            x_train_pre=x_train_pre,
+            x_val_pre=x_test_pre
         )
 
         model = saei_model.fit(dados, vae_config)

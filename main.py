@@ -119,13 +119,13 @@ algorithms = {
 
 # Definição de imputers para testar diferentes abordagens
 imputers = {
-    #"Mean": SimpleImputer(strategy="mean"),
-    #"KNN": KNNImputer(n_neighbors=5, weights='distance'),
-    #"MICE": IterativeImputer(max_iter=100),
+    "Mean": SimpleImputer(strategy="mean"),
+    "KNN": KNNImputer(n_neighbors=5, weights='distance'),
+    "MICE": IterativeImputer(max_iter=100),
     "SAEI": None,
-    #"PMIVAE": None,  # Será tratado separadamente, pois é um modelo treinado
-    #"LPMD": None,
-    #"LPMD2": None  # Será tratado separadamente, pois é um modelo treinado
+    "PMIVAE": None,  # Será tratado separadamente, pois é um modelo treinado
+    "LPMD": None,
+    "LPMD2": None  # Será tratado separadamente, pois é um modelo treinado
 }
 
 #3 folds to choose the best hyperparameters
